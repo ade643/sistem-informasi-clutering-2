@@ -1,0 +1,294 @@
+### Test API Endpoints
+
+# Base URL
+@baseUrl = http://localhost:5000/api
+
+### 1. Authentication Tests
+
+# Login Admin
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@sekolah.com",
+  "password": "admin123"
+}
+
+###
+
+# Login Teacher
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "guru.math@sekolah.com",
+  "password": "teacher123"
+}
+
+###
+
+# Register New User
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "nama": "Guru Baru",
+  "email": "guru.baru@sekolah.com",
+  "password": "password123",
+  "role": "teacher"
+}
+
+###
+
+### 2. Siswa Management Tests
+
+# Get All Siswa
+GET {{baseUrl}}/siswa
+Authorization: Bearer {{authToken}}
+
+###
+
+# Get Siswa with Search
+GET {{baseUrl}}/siswa?search=ahmad&page=1&limit=5
+Authorization: Bearer {{authToken}}
+
+###
+
+# Get Siswa by ID
+GET {{baseUrl}}/siswa/1
+Authorization: Bearer {{authToken}}
+
+###
+
+# Create New Siswa
+POST {{baseUrl}}/siswa
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "nis": "2024006",
+  "nama": "Anisa Putri",
+  "kelas": "XII IPA 1",
+  "jenis_kelamin": "P",
+  "tanggal_lahir": "2006-09-15",
+  "alamat": "Jl. Kebayoran Baru No. 123, Jakarta",
+  "telepon": "081234567895"
+}
+
+###
+
+# Update Siswa
+PUT {{baseUrl}}/siswa/1
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "nama": "Ahmad Rizki Updated",
+  "alamat": "Jl. Merdeka No. 123 Updated, Jakarta"
+}
+
+###
+
+# Delete Siswa
+DELETE {{baseUrl}}/siswa/6
+Authorization: Bearer {{authToken}}
+
+###
+
+# Get Siswa Stats
+GET {{baseUrl}}/siswa/stats
+Authorization: Bearer {{authToken}}
+
+###
+
+### 3. Nilai Management Tests
+
+# Get All Nilai
+GET {{baseUrl}}/nilai
+Authorization: Bearer {{authToken}}
+
+###
+
+# Get Nilai with Search
+GET {{baseUrl}}/nilai?search=ahmad&semester=Ganjil 2024
+Authorization: Bearer {{authToken}}
+
+###
+
+# Get Nilai by ID
+GET {{baseUrl}}/nilai/1
+Authorization: Bearer {{authToken}}
+
+###
+
+# Create New Nilai
+POST {{baseUrl}}/nilai
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "siswa_id": 1,
+  "semester": "Genap 2024",
+  "matematika": 88,
+  "fisika": 85,
+  "kimia": 87,
+  "biologi": 90,
+  "bahasa_indonesia": 85,
+  "bahasa_inggris": 82
+}
+
+###
+
+# Update Nilai
+PUT {{baseUrl}}/nilai/1
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "matematika": 90,
+  "fisika": 88
+}
+
+###
+
+# Delete Nilai
+DELETE {{baseUrl}}/nilai/6
+Authorization: Bearer {{authToken}}
+
+###
+
+# Get Nilai Stats
+GET {{baseUrl}}/nilai/stats
+Authorization: Bearer {{authToken}}
+
+###
+
+### 4. Clustering Tests
+
+# Run Clustering
+POST {{baseUrl}}/clustering/run
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "algoritma": "kmeans",
+  "jumlah_cluster": 3,
+  "semester": "Ganjil 2024"
+}
+
+###
+
+# Get Clustering Results
+GET {{baseUrl}}/clustering/results
+Authorization: Bearer {{authToken}}
+
+###
+
+# Get Clustering Results with Filter
+GET {{baseUrl}}/clustering/results?cluster=Tinggi&page=1&limit=10
+Authorization: Bearer {{authToken}}
+
+###
+
+# Get Clustering Stats
+GET {{baseUrl}}/clustering/stats
+Authorization: Bearer {{authToken}}
+
+###
+
+# Clear Clustering Results
+DELETE {{baseUrl}}/clustering/clear
+Authorization: Bearer {{authToken}}
+
+###
+
+### 5. User Management Tests (Admin Only)
+
+# Get All Users
+GET {{baseUrl}}/users
+Authorization: Bearer {{adminToken}}
+
+###
+
+# Get User by ID
+GET {{baseUrl}}/users/1
+Authorization: Bearer {{adminToken}}
+
+###
+
+# Create New User
+POST {{baseUrl}}/users
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "nama": "Guru Bahasa",
+  "email": "guru.bahasa@sekolah.com",
+  "password": "password123",
+  "role": "teacher",
+  "status": "active"
+}
+
+###
+
+# Update User
+PUT {{baseUrl}}/users/3
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "nama": "Guru Bahasa Updated",
+  "status": "inactive"
+}
+
+###
+
+# Change User Password
+PUT {{baseUrl}}/users/3/password
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "newPassword": "newpassword123"
+}
+
+###
+
+# Delete User
+DELETE {{baseUrl}}/users/3
+Authorization: Bearer {{adminToken}}
+
+###
+
+# Get User Stats
+GET {{baseUrl}}/users/stats
+Authorization: Bearer {{adminToken}}
+
+###
+
+### 6. Dashboard Tests
+
+# Get Dashboard Stats
+GET {{baseUrl}}/dashboard/stats
+Authorization: Bearer {{authToken}}
+
+###
+
+# Get Chart Data
+GET {{baseUrl}}/dashboard/charts
+Authorization: Bearer {{authToken}}
+
+###
+
+# Get Quick Stats
+GET {{baseUrl}}/dashboard/quick-stats
+Authorization: Bearer {{authToken}}
+
+###
+
+### 7. Health Check
+
+# Health Check
+GET http://localhost:5000/health
+
+### 
