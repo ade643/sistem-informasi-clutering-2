@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { BarChart3, Play, Trash2, Download, Filter } from "lucide-react"
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import apiService from "@/lib/api"
 import { StudentGradeDetailModal } from '@/components/student-grade-detail-modal'
 import { DownloadReportModal } from "@/components/download-report-modal";
@@ -403,48 +404,93 @@ export default function ClusteringPage() {
             <Card>
               <CardHeader>
                 <CardTitle>Distribusi Siswa per Cluster</CardTitle>
-                <CardDescription>Jumlah dan persentase siswa dalam setiap cluster yang dihasilkan.</CardDescription>
+                <CardDescription>Grafik dan tabel jumlah siswa dalam setiap cluster yang dihasilkan.</CardDescription>
               </CardHeader>
               <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Cluster</TableHead>
-                      <TableHead >Jumlah Siswa</TableHead>
-                      <TableHead>Keterangan</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {(stats?.cluster_distribution && Array.isArray(stats.cluster_distribution)
-                      ? stats.cluster_distribution
-                      : Object.entries(stats?.cluster_distribution || {}).map(([label, data]) => ({
-                          cluster_id: (data as any).cluster_id, // Assuming cluster_id is available in the object
-                          label,
-                          count: (data as any).count,
-                          percentage: (data as any).percentage,
-                        }))
-                    )
-                      ?.sort((a, b) => {
-                        const rank: { [key: string]: number } = {
-                          'sangat tinggi': 1,
-                          'tinggi': 2,
-                          'sedang': 3,
-                          'rendah': 4,
-                          'sangat rendah': 5,
-                        };
-                        const rankA = rank[a.label.toLowerCase()] || 99;
-                        const rankB = rank[b.label.toLowerCase()] || 99;
-                        return rankA - rankB;
-                      })
-                      .map((entry) => (
-                        <TableRow key={`${entry.cluster_id}-${entry.label}`}>                          
-                          <TableCell>{entry.cluster_id}</TableCell>
-                          <TableCell>{entry.count}</TableCell>
-                          <TableCell>{entry.label}</TableCell>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* Bar Chart */}
+                  <div className="h-[300px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart 
+                        data={(stats?.cluster_distribution && Array.isArray(stats.cluster_distribution)
+                          ? stats.cluster_distribution
+                          : Object.entries(stats?.cluster_distribution || {}).map(([label, data]) => ({
+                              cluster_id: (data as any).cluster_id,
+                              label,
+                              count: (data as any).count,
+                              percentage: (data as any).percentage,
+                            }))
+                        )?.sort((a, b) => {
+                          const rank: { [key: string]: number } = {
+                            'sangat tinggi': 1,
+                            'tinggi': 2,
+                            'sedang': 3,
+                            'rendah': 4,
+                            'sangat rendah': 5,
+                          };
+                          const rankA = rank[a.label.toLowerCase()] || 99;
+                          const rankB = rank[b.label.toLowerCase()] || 99;
+                          return rankA - rankB;
+                        })}
+                        margin={{ top: 5, right: 20, left: -10, bottom: 5 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="label" />
+                        <YAxis />
+                        <Tooltip 
+                          contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '0.5rem' }}
+                          labelStyle={{ color: '#f9fafb' }}
+                          formatter={(value, name, props) => [`${value} siswa`, 'Jumlah']}
+                        />
+                        <Legend formatter={(value) => 'Jumlah Siswa'} />
+                        <Bar dataKey="count" fill="#8884d8" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+
+                  {/* Table Distribution */}
+                  <div className="w-full">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Cluster</TableHead>
+                          <TableHead >Jumlah Siswa</TableHead>
+                          <TableHead>%</TableHead>
                         </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                      </TableHeader>
+                      <TableBody>
+                        {(stats?.cluster_distribution && Array.isArray(stats.cluster_distribution)
+                          ? stats.cluster_distribution
+                          : Object.entries(stats?.cluster_distribution || {}).map(([label, data]) => ({
+                              cluster_id: (data as any).cluster_id,
+                              label,
+                              count: (data as any).count,
+                              percentage: (data as any).percentage,
+                            }))
+                        )
+                          ?.sort((a, b) => {
+                            const rank: { [key: string]: number } = {
+                              'sangat tinggi': 1,
+                              'tinggi': 2,
+                              'sedang': 3,
+                              'rendah': 4,
+                              'sangat rendah': 5,
+                            };
+                            const rankA = rank[a.label.toLowerCase()] || 99;
+                            const rankB = rank[b.label.toLowerCase()] || 99;
+                            return rankA - rankB;
+                          })
+                          .map((entry) => (
+                            <TableRow key={`${entry.cluster_id}-${entry.label}`}>                          
+                              <TableCell>{entry.label}</TableCell>
+                              <TableCell>{entry.count}</TableCell>
+                              <TableCell>{entry.percentage}</TableCell>
+                            </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           )}
