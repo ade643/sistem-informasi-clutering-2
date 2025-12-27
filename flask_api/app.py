@@ -59,8 +59,8 @@ def kmeans_manual(data_scaled, k, max_iter=300, verbose=True, show_first_n_featu
         return [], [], 0, []
 
     # Inisialisasi centroid (catatan: ini bukan acak; ini ambil k data pertama)
-    np.random.seed(42)
-    idx = np.random.choice(n_samples, k, replace=False)
+    rng = np.random.default_rng(42)
+    idx = rng.choice(n_samples, k, replace=False)
     centroids = data_scaled[idx].copy()
 
     clusters = np.zeros(n_samples, dtype=int)
@@ -86,10 +86,10 @@ def kmeans_manual(data_scaled, k, max_iter=300, verbose=True, show_first_n_featu
         for ci in range(k):
             members = data_scaled[clusters == ci]
             if len(members) == 0:
-                # cluster kosong: centroid tetap (atau bisa re-init random)
-                new_centroids[ci] = centroids[ci]
+                new_centroids[ci] = data_scaled[int(rng.integers(0, n_samples))]
             else:
                 new_centroids[ci] = members.mean(axis=0)
+
 
         # Hitung WCSS iterasi ini (pakai centroid sesudah update)
         dists_iter = np.linalg.norm(data_scaled - new_centroids[clusters], axis=1)
