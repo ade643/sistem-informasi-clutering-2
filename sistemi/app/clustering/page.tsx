@@ -356,7 +356,7 @@ export default function ClusteringPage() {
     const sortedClusters = Array.from(clusterLabels.keys()).sort((a, b) => a - b)
     const series = sortedClusters.map((clusterId) => ({
       key: `cluster_${clusterId}`,
-      label: `Cluster ${clusterId + 1} (${clusterLabels.get(clusterId)})`,
+      label: clusterLabels.get(clusterId) || `Cluster ${clusterId + 1}`,
       clusterLabel: clusterLabels.get(clusterId) || "",
     }))
 

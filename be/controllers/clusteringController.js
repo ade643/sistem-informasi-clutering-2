@@ -6,6 +6,91 @@ import MataPelajaran from '../model/mapelModel.js'; // Ganti dengan model baru
 import axios from 'axios';
 import PDFDocument from 'pdfkit';
 
+const CLUSTER_COLOR_MAP = {
+  'sangat tinggi': '#3b82f6',
+  'tinggi': '#22c55e',
+  'sedang': '#9ca3af',
+  'rendah': '#ef4444',
+  'sangat rendah': '#eab308',
+};
+
+const getClusterColorHex = (label = '') => {
+  const lower = String(label).toLowerCase();
+  if (lower.includes('sangat tinggi')) return CLUSTER_COLOR_MAP['sangat tinggi'];
+  if (lower.includes('tinggi') && !lower.includes('sangat')) return CLUSTER_COLOR_MAP['tinggi'];
+  if (lower.includes('sedang')) return CLUSTER_COLOR_MAP['sedang'];
+  if (lower.includes('rendah') && !lower.includes('sangat')) return CLUSTER_COLOR_MAP['rendah'];
+  if (lower.includes('sangat rendah')) return CLUSTER_COLOR_MAP['sangat rendah'];
+  return '#64748b';
+};
+
+const drawClusterProfileChart = (doc, chartData, series, mapelLegend) => {
+  doc.fontSize(12).font('Helvetica-Bold').fillColor('#000000').text('Grafik: Perbandingan Profil Kemampuan Siswa per Cluster', 40);
+  doc.moveDown(0.3);
+  doc.fontSize(9).font('Helvetica').fillColor('#4b5563').text('Sumbu X: kode mata pelajaran | Sumbu Y: rata-rata nilai (0-100)', 40);
+
+  const chart = { x: 55, y: doc.y + 15, width: 500, height: 220 };
+
+  doc.lineWidth(0.7).strokeColor('#111827');
+  doc.moveTo(chart.x, chart.y).lineTo(chart.x, chart.y + chart.height).stroke();
+  doc.moveTo(chart.x, chart.y + chart.height).lineTo(chart.x + chart.width, chart.y + chart.height).stroke();
+
+  for (let tick = 0; tick <= 100; tick += 20) {
+    const y = chart.y + chart.height - (tick / 100) * chart.height;
+    doc.strokeColor('#d1d5db').lineWidth(0.5);
+    doc.moveTo(chart.x, y).lineTo(chart.x + chart.width, y).stroke();
+    doc.fillColor('#374151').fontSize(7).text(String(tick), chart.x - 20, y - 3, { width: 16, align: 'right' });
+  }
+
+  const groups = chartData.length;
+  const clusters = series.length || 1;
+  if (groups > 0) {
+    const groupWidth = chart.width / groups;
+    const innerPadding = Math.min(8, groupWidth * 0.15);
+    const slot = (groupWidth - innerPadding * 2) / clusters;
+    const barWidth = Math.max(2, slot * 0.7);
+
+    chartData.forEach((row, groupIndex) => {
+      const groupX = chart.x + groupIndex * groupWidth + innerPadding;
+      series.forEach((s, clusterIndex) => {
+        const val = Number(row[s.key]) || 0;
+        const clampedVal = Math.max(0, Math.min(100, val));
+        const h = (clampedVal / 100) * chart.height;
+        const x = groupX + clusterIndex * slot + (slot - barWidth) / 2;
+        const y = chart.y + chart.height - h;
+        doc.fillColor(getClusterColorHex(s.clusterLabel)).rect(x, y, barWidth, h).fill();
+      });
+
+      const xLabel = row.mapelCode || `M${groupIndex + 1}`;
+      doc.fillColor('#111827').fontSize(7).text(String(xLabel), chart.x + groupIndex * groupWidth, chart.y + chart.height + 4, { width: groupWidth, align: 'center' });
+    });
+  }
+
+  let legendY = chart.y + chart.height + 18;
+  doc.fontSize(8).font('Helvetica-Bold').fillColor('#111827').text('Legend Cluster:', 40, legendY);
+  legendY += 10;
+  series.forEach((s, i) => {
+    const col = i % 2;
+    const row = Math.floor(i / 2);
+    const x = 40 + col * 260;
+    const y = legendY + row * 12;
+    doc.fillColor(getClusterColorHex(s.clusterLabel)).rect(x, y + 2, 8, 8).fill();
+    doc.fillColor('#111827').font('Helvetica').fontSize(8).text(s.label, x + 12, y, { width: 240 });
+  });
+
+  const legendRows = Math.ceil(series.length / 2);
+  let mapelY = legendY + legendRows * 12 + 12;
+  doc.fontSize(8).font('Helvetica-Bold').fillColor('#111827').text('Keterangan Kode Mapel:', 40, mapelY);
+  mapelY += 10;
+  mapelLegend.forEach((item, idx) => {
+    const col = idx % 3;
+    const row = Math.floor(idx / 3);
+    const x = 40 + col * 175;
+    const y = mapelY + row * 11;
+    doc.fontSize(7).font('Helvetica').fillColor('#374151').text(`${item.code} = ${item.mapel}`, x, y, { width: 165 });
+  });
+};
+
 export const runClustering = async (req, res) => {
   try {
     // --- 1. Validasi Input ---
@@ -457,7 +542,12 @@ export const downloadClusteringReport = async (req, res) => {
     if (semester) nilaiWhereClause.semester = semester;
     if (tahun_ajaran) nilaiWhereClause.tahun_ajaran = tahun_ajaran;
 
-    const allNilai = await Nilai.findAll({ where: nilaiWhereClause, attributes: ['siswa_id', 'nilai'] });
+    const allNilai = await Nilai.findAll({
+      where: nilaiWhereClause,
+      attributes: ['siswa_id', 'mapel_id', 'nilai'],
+      include: [{ model: MataPelajaran, as: 'mata_pelajaran', attributes: ['id', 'nama_mapel'] }],
+      order: [['mapel_id', 'ASC']],
+    });
 
     const nilaiMap = allNilai.reduce((acc, n) => {
       if (!acc[n.siswa_id]) acc[n.siswa_id] = [];
@@ -476,6 +566,66 @@ export const downloadClusteringReport = async (req, res) => {
         siswa: item.siswa.get({ plain: true }),
         nilai_rata_rata: averageNilaiMap[item.siswa_id] || 'N/A',
     }));
+
+    const clusterMeta = new Map();
+    finalResults.forEach((item) => {
+      if (!clusterMeta.has(item.cluster)) {
+        clusterMeta.set(item.cluster, item.keterangan || `Cluster ${item.cluster + 1}`);
+      }
+    });
+
+    const resultBySiswaId = new Map(finalResults.map((r) => [r.siswa_id, r]));
+    const mapelMeta = new Map();
+    const mapelClusterAgg = new Map();
+
+    allNilai.forEach((n) => {
+      const result = resultBySiswaId.get(n.siswa_id);
+      if (!result) return;
+
+      const mapelName = n.mata_pelajaran?.nama_mapel || `Mapel ${n.mapel_id}`;
+      if (!mapelMeta.has(mapelName)) {
+        mapelMeta.set(mapelName, n.mapel_id);
+      }
+
+      if (!mapelClusterAgg.has(mapelName)) {
+        mapelClusterAgg.set(mapelName, {});
+      }
+
+      const clusterAgg = mapelClusterAgg.get(mapelName);
+      if (!clusterAgg[result.cluster]) {
+        clusterAgg[result.cluster] = { total: 0, count: 0 };
+      }
+      clusterAgg[result.cluster].total += parseFloat(n.nilai);
+      clusterAgg[result.cluster].count += 1;
+    });
+
+    const sortedClusterIds = Array.from(clusterMeta.keys()).sort((a, b) => a - b);
+    const chartSeries = sortedClusterIds.map((clusterId) => ({
+      key: `cluster_${clusterId}`,
+      label: clusterMeta.get(clusterId) || `Cluster ${clusterId + 1}`,
+      clusterLabel: clusterMeta.get(clusterId) || '',
+    }));
+
+    const mapelEntries = Array.from(mapelClusterAgg.entries()).sort((a, b) => {
+      const aId = mapelMeta.get(a[0]) || Number.MAX_SAFE_INTEGER;
+      const bId = mapelMeta.get(b[0]) || Number.MAX_SAFE_INTEGER;
+      return aId - bId;
+    });
+
+    const mapelLegend = mapelEntries.map(([mapel], index) => ({ code: `M${index + 1}`, mapel }));
+    const mapelCodeByName = new Map(mapelLegend.map((m) => [m.mapel, m.code]));
+
+    const chartData = mapelEntries.map(([mapel, clusterAgg]) => {
+      const row = {
+        mapelCode: mapelCodeByName.get(mapel) || mapel,
+        mapelFull: mapel,
+      };
+      sortedClusterIds.forEach((clusterId) => {
+        const agg = clusterAgg[clusterId];
+        row[`cluster_${clusterId}`] = agg?.count ? Number((agg.total / agg.count).toFixed(2)) : 0;
+      });
+      return row;
+    });
 
     // --- 3. PDF GENERATION ---
     const doc = new PDFDocument({ margin: 40, size: 'A4' });
@@ -529,6 +679,12 @@ export const downloadClusteringReport = async (req, res) => {
     const subHeader = `Tahun Ajaran: ${tahun_ajaran || 'Semua'} | Semester: ${semester || 'Semua'} | Kelas: ${kelasList.length > 0 ? kelasList.join(', ') : 'Semua'}`;
     doc.fontSize(10).font('Helvetica').text(subHeader, { align: 'center' });
     doc.moveDown(2);
+
+    // Grafik ditempatkan lebih dulu sebelum tabel
+    if (chartData.length > 0 && chartSeries.length > 0) {
+      drawClusterProfileChart(doc, chartData, chartSeries, mapelLegend);
+      doc.addPage();
+    }
 
     // Table 1: Ringkasan Hasil
     const totalSiswa = finalResults.length;
