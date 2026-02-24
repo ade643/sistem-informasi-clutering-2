@@ -12,8 +12,7 @@ const allNavigation = [
   { name: "Data Pengguna", href: "/users", icon: Users, roles: ["admin"] },
   { name: "Data Siswa", href: "/students", icon: GraduationCap, roles: ["admin"] },
   { name: "Data Nilai", href: "/grades", icon: FileText, roles: ["admin", "teacher"] },
-
-  { name: "Hasil Clustering", href: "/clustering", icon: BarChart3, roles: ["admin", "teacher"] },
+  { name: "Clustering", href: "/clustering", icon: BarChart3, roles: ["admin", "teacher"] },
 ]
 
 export function Sidebar() {
