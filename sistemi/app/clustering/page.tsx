@@ -1,7 +1,7 @@
 'use client'
 
 import type React from "react"
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -47,6 +47,17 @@ interface ClusteringStats {
   clusters_count: number
 }
 
+interface NilaiItem {
+  mapel_id: number
+  nama_mapel: string
+  nilai: string
+}
+
+interface NilaiBySiswa {
+  siswa_id: number
+  nilai: NilaiItem[]
+}
+
 // Struktur filter nilai berdasarkan tahun ajaran, semester, dan kelas
 interface NilaiFilters {
   tahun_ajaran: string[];
@@ -58,6 +69,7 @@ export default function ClusteringPage() {
   // State utama
   const [results, setResults] = useState<ClusteringResult[]>([])
   const [stats, setStats] = useState<ClusteringStats | null>(null)
+  const [nilaiBySiswa, setNilaiBySiswa] = useState<NilaiBySiswa[]>([])
   const [loading, setLoading] = useState(true)
   const [running, setRunning] = useState(false)
   const [error, setError] = useState("")
@@ -147,6 +159,7 @@ export default function ClusteringPage() {
       if (!activeFilters.tahun_ajaran || !activeFilters.semester || !activeFilters.kelas) {
         setResults([]);
         setStats(null);
+        setNilaiBySiswa([]);
         return;
       }
 
@@ -155,9 +168,10 @@ export default function ClusteringPage() {
         const apiParams = { ...activeFilters, cluster: clusterFilter, all: 'true' };
         const statsParams = { ...activeFilters };
 
-        const [resultsResponse, statsResponse] = await Promise.all([
+        const [resultsResponse, statsResponse, nilaiResponse] = await Promise.all([
           apiService.getClusteringResults(apiParams, signal),
           apiService.getClusteringStats(statsParams, signal),
+          apiService.getNilai({ ...activeFilters, all: 'true' }),
         ]);
 
         const resultsWithPeriod = resultsResponse.data.map((res: any) => ({
@@ -167,8 +181,10 @@ export default function ClusteringPage() {
           kelas: activeFilters.kelas,
         }));
 
+        if (signal.aborted) return;
         setResults(resultsWithPeriod);
         setStats(statsResponse.data);
+        setNilaiBySiswa(nilaiResponse.data || []);
       } catch (error: any) {
         if (error.name !== 'AbortError') {
           setError(error.message || "Gagal memuat data clustering");
@@ -285,6 +301,86 @@ export default function ClusteringPage() {
     if (lower.includes("sangat rendah")) return "bg-yellow-500 text-black"
     return "bg-gray-200 text-black"
   }
+
+  const getClusterColor = (label: string): string => {
+    const lower = label.toLowerCase()
+    if (lower.includes("sangat tinggi")) return "#3b82f6"
+    if (lower.includes("tinggi") && !lower.includes("sangat")) return "#22c55e"
+    if (lower.includes("sedang")) return "#9ca3af"
+    if (lower.includes("rendah") && !lower.includes("sangat")) return "#ef4444"
+    if (lower.includes("sangat rendah")) return "#eab308"
+    return "#64748b"
+  }
+
+  const clusterProfile = useMemo(() => {
+    if (!results.length || !nilaiBySiswa.length) {
+      return {
+        chartData: [],
+        series: [] as Array<{ key: string; label: string; clusterLabel: string }>,
+        mapelLegend: [] as Array<{ code: string; mapel: string }>,
+      }
+    }
+
+    const gradeByStudent = new Map<number, NilaiItem[]>()
+    for (const entry of nilaiBySiswa) {
+      gradeByStudent.set(entry.siswa_id, entry.nilai || [])
+    }
+
+    const clusterLabels = new Map<number, string>()
+    for (const row of results) {
+      if (!clusterLabels.has(row.cluster)) {
+        clusterLabels.set(row.cluster, row.keterangan || `C${row.cluster + 1}`)
+      }
+    }
+
+    const mapelClusterAgg = new Map<string, Record<number, { total: number; count: number }>>()
+    for (const row of results) {
+      const grades = gradeByStudent.get(row.siswa_id) || []
+      for (const grade of grades) {
+        const value = Number(grade.nilai)
+        if (Number.isNaN(value)) continue
+
+        if (!mapelClusterAgg.has(grade.nama_mapel)) {
+          mapelClusterAgg.set(grade.nama_mapel, {})
+        }
+
+        const clusterAgg = mapelClusterAgg.get(grade.nama_mapel)!
+        if (!clusterAgg[row.cluster]) {
+          clusterAgg[row.cluster] = { total: 0, count: 0 }
+        }
+        clusterAgg[row.cluster].total += value
+        clusterAgg[row.cluster].count += 1
+      }
+    }
+
+    const sortedClusters = Array.from(clusterLabels.keys()).sort((a, b) => a - b)
+    const series = sortedClusters.map((clusterId) => ({
+      key: `cluster_${clusterId}`,
+      label: `Cluster ${clusterId + 1} (${clusterLabels.get(clusterId)})`,
+      clusterLabel: clusterLabels.get(clusterId) || "",
+    }))
+
+    const mapelEntries = Array.from(mapelClusterAgg.entries())
+    const mapelLegend = mapelEntries.map(([mapel], index) => ({
+      code: `M${index + 1}`,
+      mapel,
+    }))
+    const codeByMapel = new Map(mapelLegend.map((item) => [item.mapel, item.code]))
+
+    const chartData = mapelEntries.map(([mapel, clusterAgg]) => {
+      const row: Record<string, string | number> = {
+        mapelCode: codeByMapel.get(mapel) || mapel,
+        mapelFull: mapel,
+      }
+      for (const clusterId of sortedClusters) {
+        const agg = clusterAgg[clusterId]
+        row[`cluster_${clusterId}`] = agg?.count ? Number((agg.total / agg.count).toFixed(2)) : 0
+      }
+      return row
+    })
+
+    return { chartData, series, mapelLegend }
+  }, [results, nilaiBySiswa])
 
   // Tampilan loading awal
   if (loading && !results.length && !error) {
@@ -403,53 +499,63 @@ export default function ClusteringPage() {
           {stats && stats.total_results > 0 && (
             <Card>
               <CardHeader>
-                <CardTitle>Distribusi Siswa per Cluster</CardTitle>
-                <CardDescription>Grafik dan tabel jumlah siswa dalam setiap cluster yang dihasilkan.</CardDescription>
+                <CardTitle>Perbandingan Profil Kemampuan Siswa per Cluster</CardTitle>
+                <CardDescription>Rata-rata nilai per mata pelajaran untuk setiap cluster.</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 gap-6">
                   {/* Bar Chart */}
-                  <div className="h-[300px] w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart 
-                        data={(stats?.cluster_distribution && Array.isArray(stats.cluster_distribution)
-                          ? stats.cluster_distribution
-                          : Object.entries(stats?.cluster_distribution || {}).map(([label, data]) => ({
-                              cluster_id: (data as any).cluster_id,
-                              label,
-                              count: (data as any).count,
-                              percentage: (data as any).percentage,
-                            }))
-                        )?.sort((a, b) => {
-                          const rank: { [key: string]: number } = {
-                            'sangat tinggi': 1,
-                            'tinggi': 2,
-                            'sedang': 3,
-                            'rendah': 4,
-                            'sangat rendah': 5,
-                          };
-                          const rankA = rank[a.label.toLowerCase()] || 99;
-                          const rankB = rank[b.label.toLowerCase()] || 99;
-                          return rankA - rankB;
-                        })}
-                        margin={{ top: 5, right: 20, left: -10, bottom: 5 }}
-                      >
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="label" />
-                        <YAxis />
-                        <Tooltip 
-                          contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '0.5rem' }}
-                          labelStyle={{ color: '#f9fafb' }}
-                          formatter={(value, name, props) => [`${value} siswa`, 'Jumlah']}
-                        />
-                        <Legend formatter={(value) => 'Jumlah Siswa'} />
-                        <Bar dataKey="count" fill="#8884d8" />
-                      </BarChart>
-                    </ResponsiveContainer>
+                  <div className="w-full space-y-3">
+                    <div className="h-[300px] w-full">
+                    {clusterProfile.chartData.length > 0 ? (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart
+                          data={clusterProfile.chartData}
+                          margin={{ top: 5, right: 20, left: -10, bottom: 5 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="mapelCode" />
+                          <YAxis />
+                          <Tooltip
+                            contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '0.5rem' }}
+                            labelStyle={{ color: '#f9fafb' }}
+                            labelFormatter={(label, payload) => {
+                              const fullName = payload?.[0]?.payload?.mapelFull
+                              return fullName ? `${label} - ${fullName}` : String(label)
+                            }}
+                            formatter={(value) => [`${Number(value).toFixed(2)}`, 'Nilai Rata-rata']}
+                          />
+                          <Legend />
+                          {clusterProfile.series.map((entry) => (
+                            <Bar
+                              key={entry.key}
+                              dataKey={entry.key}
+                              name={entry.label}
+                              fill={getClusterColor(entry.clusterLabel)}
+                            />
+                          ))}
+                        </BarChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="h-full w-full flex items-center justify-center text-sm text-muted-foreground">
+                        Data nilai per mapel belum tersedia untuk ditampilkan.
+                      </div>
+                    )}
+                    </div>
+                    {clusterProfile.mapelLegend.length > 0 && (
+                      <div className="rounded-md border p-3">
+                        <p className="mb-2 text-sm font-medium">Keterangan Kode Mapel</p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-1 text-xs text-muted-foreground">
+                          {clusterProfile.mapelLegend.map((item) => (
+                            <span key={item.code}>{item.code} = {item.mapel}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Table Distribution */}
-                  <div className="w-full">
+                  <div className="w-full overflow-x-auto">
                     <Table>
                       <TableHeader>
                         <TableRow>
