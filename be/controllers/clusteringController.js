@@ -1,4 +1,4 @@
-import { Sequelize } from 'sequelize';
+import { Op, Sequelize } from 'sequelize';
 import hasil_cluster from '../model/hasil.js';
 import Nilai from '../model/nilaiModel.js'; // Ganti dengan model baru
 import Siswa from '../model/siswaModel.js';
@@ -94,7 +94,7 @@ const drawClusterProfileChart = (doc, chartData, series, mapelLegend) => {
 export const runClustering = async (req, res) => {
   try {
     // --- 1. Validasi Input ---
-    let { algoritma = 'kmeans', jumlah_cluster = 3, semester = '', tahun_ajaran = '' } = req.body;
+    let { algoritma = 'kmeans', jumlah_cluster = 3, semester = '', tahun_ajaran = '', kelas = '' } = req.body;
     jumlah_cluster = parseInt(jumlah_cluster);
 
     if (isNaN(jumlah_cluster) || jumlah_cluster <= 0) {
@@ -102,7 +102,10 @@ export const runClustering = async (req, res) => {
     }
     if (jumlah_cluster > 5) {
       return res.status(400).json({ message: 'Jumlah cluster maksimal 5' });
-  }
+    }
+    if (!semester || !tahun_ajaran || !kelas) {
+      return res.status(400).json({ message: 'Filter kelas, semester, dan tahun ajaran wajib diisi' });
+    }
 
     // --- 2. Persiapan Data ---
     const allMapel = await MataPelajaran.findAll({ order: [['id', 'ASC']] });
@@ -111,12 +114,16 @@ export const runClustering = async (req, res) => {
     const whereClause = {};
     if (semester) whereClause.semester = semester;
     if (tahun_ajaran) whereClause.tahun_ajaran = tahun_ajaran;
+    if (kelas) whereClause.kelas_snapshot = kelas;
 
+    const siswaInclude = {
+      model: Siswa,
+      as: 'siswa',
+      attributes: ['id', 'nis', 'nama', 'kelas'],
+    };
     const nilaiData = await Nilai.findAll({
       where: whereClause,
-      include: [
-        { model: Siswa, as: 'siswa', attributes: ['id', 'nis', 'nama', 'kelas'] },
-      ],
+      include: [siswaInclude],
       order: [['siswa_id', 'ASC'], ['mapel_id', 'ASC']]
     });
 
@@ -133,7 +140,7 @@ export const runClustering = async (req, res) => {
           siswa_id: item.siswa_id,
           nis: item.siswa.nis,
           nama: item.siswa.nama,
-          kelas: item.siswa.kelas,
+          kelas: item.kelas_snapshot || item.siswa.kelas,
           semester: item.semester,
           tahun_ajaran: item.tahun_ajaran,
           nilai: {}
@@ -212,8 +219,12 @@ export const runClustering = async (req, res) => {
       };
     });
 
-    // Hapus hasil clustering sebelumnya untuk semester & tahun ajaran yang spesifik
-    await hasil_cluster.destroy({ where: { semester, tahun_ajaran } });
+    // Hapus hasil clustering sebelumnya sesuai filter aktif.
+    const destroyWhere = {};
+    if (semester) destroyWhere.semester = semester;
+    if (tahun_ajaran) destroyWhere.tahun_ajaran = tahun_ajaran;
+    if (kelas) destroyWhere.kelas_snapshot = kelas;
+    await hasil_cluster.destroy({ where: destroyWhere });
 
     const clusteringResultsToSave = resultsWithSiswa.map(c => ({
       siswa_id: c.siswa_id,
@@ -226,6 +237,7 @@ export const runClustering = async (req, res) => {
       jumlah_cluster,
       semester: c.semester,
       tahun_ajaran: c.tahun_ajaran,
+      kelas_snapshot: c.kelas,
     }));
 
     await hasil_cluster.bulkCreate(clusteringResultsToSave);
@@ -247,12 +259,14 @@ export const runClustering = async (req, res) => {
 
 export const getClusteringResults = async (req, res) => {
   try {
-    const { page = 1, limit = 10, cluster = '', all = false, semester, tahun_ajaran } = req.query;
+    const { page = 1, limit = 10, cluster = '', all = false, semester, tahun_ajaran, kelas } = req.query;
     
     const whereClause = {};
     if (cluster) whereClause.keterangan = cluster;
     if (semester) whereClause.semester = semester;
     if (tahun_ajaran) whereClause.tahun_ajaran = tahun_ajaran;
+    if (kelas) whereClause.kelas_snapshot = kelas;
+    const include = [{ model: Siswa, as: 'siswa', attributes: ['id', 'nis', 'nama', 'kelas'] }];
 
     const processResults = async (results) => {
       if (results.length === 0) {
@@ -267,6 +281,7 @@ export const getClusteringResults = async (req, res) => {
       };
       if (semester) nilaiWhereClause.semester = semester;
       if (tahun_ajaran) nilaiWhereClause.tahun_ajaran = tahun_ajaran;
+      if (kelas) nilaiWhereClause.kelas_snapshot = kelas;
 
       const allNilai = await Nilai.findAll({
         where: nilaiWhereClause,
@@ -292,7 +307,7 @@ export const getClusteringResults = async (req, res) => {
         siswa_id: row.siswa_id,
         nis: row.siswa?.nis,
         nama: row.siswa?.nama,
-        kelas: row.siswa?.kelas,
+        kelas: row.kelas_snapshot || row.siswa?.kelas,
         cluster: row.cluster,
         keterangan: row.keterangan,
         jarak_centroid: row.jarak_centroid,
@@ -305,12 +320,12 @@ export const getClusteringResults = async (req, res) => {
     if (all === 'true' || parseInt(limit) >= 1000) {
       const results = await hasil_cluster.findAll({
         where: whereClause,
-        include: [{ model: Siswa, as: 'siswa', attributes: ['id', 'nis', 'nama', 'kelas'] }],
+        include,
         order: [['created_at', 'DESC']],
       });
 
       const formattedResults = await processResults(results);
-      const totalCount = await hasil_cluster.count({ where: whereClause });
+      const totalCount = await hasil_cluster.count({ where: whereClause, include });
 
       return res.json({
         success: true,
@@ -327,7 +342,7 @@ export const getClusteringResults = async (req, res) => {
     const offset = (parseInt(page) - 1) * parseInt(limit);
     const { count, rows } = await hasil_cluster.findAndCountAll({
       where: whereClause,
-      include: [{ model: Siswa, as: 'siswa', attributes: ['id', 'nis', 'nama', 'kelas'] }],
+      include,
       limit: parseInt(limit),
       offset: parseInt(offset),
       order: [['created_at', 'DESC']],
@@ -429,12 +444,12 @@ const calculateClusteringStats = async (whereClause, include = []) => {
 
 export const getClusteringStats = async (req, res) => {
   try {
-    const { semester, tahun_ajaran } = req.query;
+    const { semester, tahun_ajaran, kelas } = req.query;
 
     const whereClause = {};
     if (semester) whereClause.semester = semester;
     if (tahun_ajaran) whereClause.tahun_ajaran = tahun_ajaran;
-
+    if (kelas) whereClause.kelas_snapshot = kelas;
     const statsData = await calculateClusteringStats(whereClause);
 
     res.json({
@@ -453,12 +468,13 @@ export const getClusteringStats = async (req, res) => {
 
 export const clearClusteringResults = async (req, res) => {
   try {
-    const { semester, tahun_ajaran } = req.query; // Mengambil dari query string
+    const { semester, tahun_ajaran, kelas } = req.query; // Mengambil dari query string
 
     const whereClause = {};
     // Hanya hapus semua jika tidak ada filter spesifik yang diberikan
     if (semester) whereClause.semester = semester;
     if (tahun_ajaran) whereClause.tahun_ajaran = tahun_ajaran;
+    if (kelas) whereClause.kelas_snapshot = kelas;
 
     if (Object.keys(whereClause).length === 0) {
         // Jika tidak ada filter, hapus semua (perilaku lama, tapi sekarang eksplisit)
@@ -469,8 +485,16 @@ export const clearClusteringResults = async (req, res) => {
     }
 
     let message = 'Hasil clustering berhasil dihapus.';
-    if (semester && tahun_ajaran) {
+    if (semester && tahun_ajaran && kelas) {
+      message = `Hasil clustering untuk kelas ${kelas}, semester ${semester}, tahun ajaran ${tahun_ajaran} berhasil dihapus.`;
+    } else if (semester && tahun_ajaran) {
       message = `Hasil clustering untuk semester ${semester} tahun ajaran ${tahun_ajaran} berhasil dihapus.`;
+    } else if (kelas && semester) {
+      message = `Hasil clustering untuk kelas ${kelas}, semester ${semester} berhasil dihapus.`;
+    } else if (kelas && tahun_ajaran) {
+      message = `Hasil clustering untuk kelas ${kelas}, tahun ajaran ${tahun_ajaran} berhasil dihapus.`;
+    } else if (kelas) {
+      message = `Hasil clustering untuk kelas ${kelas} berhasil dihapus.`;
     } else if (semester) {
       message = `Hasil clustering untuk semester ${semester} berhasil dihapus.`;
     } else if (tahun_ajaran) {
@@ -497,6 +521,8 @@ export const downloadClusteringReport = async (req, res) => {
     const whereClause = {};
     if (tahun_ajaran) whereClause.tahun_ajaran = tahun_ajaran;
     if (semester) whereClause.semester = semester;
+    if (kelasList.length === 1) whereClause.kelas_snapshot = kelasList[0];
+    if (kelasList.length > 1) whereClause.kelas_snapshot = { [Op.in]: kelasList };
     
     const siswaInclude = {
       model: Siswa,
@@ -504,10 +530,6 @@ export const downloadClusteringReport = async (req, res) => {
       attributes: ['id', 'nis', 'nama', 'kelas'],
       where: {}
     };
-
-    if (kelasList.length > 0) {
-      siswaInclude.where.kelas = kelasList;
-    }
 
     const DATA_LIMIT = 2000;
     const recordCount = await hasil_cluster.count({
@@ -724,7 +746,7 @@ export const downloadClusteringReport = async (req, res) => {
         no: index + 1,
         nis: item.siswa.nis,
         nama: item.siswa.nama,
-        kelas: item.siswa.kelas,
+        kelas: item.kelas_snapshot || item.siswa.kelas,
         cluster: item.cluster,
         keterangan: item.keterangan,
         rata_rata: item.nilai_rata_rata,
@@ -765,7 +787,7 @@ export const downloadClusteringReport = async (req, res) => {
             no: index + 1,
             nis: item.siswa.nis,
             nama: item.siswa.nama,
-            kelas: item.siswa.kelas,
+            kelas: item.kelas_snapshot || item.siswa.kelas,
             cluster: item.cluster,
             keterangan: item.keterangan,
             rata_rata: item.nilai_rata_rata,

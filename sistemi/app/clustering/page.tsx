@@ -1,7 +1,7 @@
 'use client'
 
 import type React from "react"
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -92,6 +92,51 @@ export default function ClusteringPage() {
     kelas: "",
   });
 
+  // State untuk filter yang aktif digunakan untuk menampilkan data di tabel
+  const [activeFilters, setActiveFilters] = useState({
+    tahun_ajaran: "",
+    semester: "",
+    kelas: "",
+  });
+
+  const refreshFilterOptions = useCallback(async (isInitialLoad = false) => {
+    try {
+      const [filtersResponse, kelasResponse] = await Promise.all([
+        apiService.getNilaiFilters(),
+        apiService.getKelasList()
+      ]);
+
+      const fetchedFilters = filtersResponse.data;
+      const fetchedKelas = kelasResponse.data;
+      setFilters({ ...fetchedFilters, kelas: fetchedKelas });
+
+      if (isInitialLoad) {
+        const initialSelected = {
+          tahun_ajaran: fetchedFilters.tahun_ajaran[0] || "",
+          semester: fetchedFilters.semester[0] || "",
+          kelas: fetchedKelas[0] || "",
+        };
+        setSelectedFilters(initialSelected);
+        setActiveFilters(initialSelected);
+        return;
+      }
+
+      setSelectedFilters((prev) => ({
+        tahun_ajaran: fetchedFilters.tahun_ajaran.includes(prev.tahun_ajaran)
+          ? prev.tahun_ajaran
+          : (fetchedFilters.tahun_ajaran[0] || ""),
+        semester: fetchedFilters.semester.includes(prev.semester)
+          ? prev.semester
+          : (fetchedFilters.semester[0] || ""),
+        kelas: fetchedKelas.includes(prev.kelas)
+          ? prev.kelas
+          : (fetchedKelas[0] || ""),
+      }));
+    } catch (error: any) {
+      setError(error.message || "Gagal memuat opsi filter");
+    }
+  }, []);
+
   const handleDownloadReport = async (selectedFilters: {
     tahun_ajaran: string;
     semester: string;
@@ -136,13 +181,6 @@ export default function ClusteringPage() {
       setError(error.message || "Gagal mengunduh laporan. Periksa konsol untuk detail.");
     }
   };
-
-  // State untuk filter yang aktif digunakan untuk menampilkan data di tabel
-  const [activeFilters, setActiveFilters] = useState({
-    tahun_ajaran: "",
-    semester: "",
-    kelas: "",
-  });
 
   // State untuk filter hasil clustering di tabel
   const [clusterFilter, setClusterFilter] = useState(""); // "" = Semua Cluster
@@ -203,34 +241,15 @@ export default function ClusteringPage() {
     };
   }, [clusterFilter, activeFilters, runCounter]);
 
-  // Mengambil data filter (tahun ajaran, semester, kelas) saat komponen dimuat
+  // Mengambil data filter dinamis saat komponen dimuat
   useEffect(() => {
-    const fetchFilterOptions = async () => {
-      try {
-        const [filtersResponse, kelasResponse] = await Promise.all([
-          apiService.getNilaiFilters(),
-          apiService.getKelasList()
-        ]);
-        
-        const fetchedFilters = filtersResponse.data;
-        const fetchedKelas = kelasResponse.data;
+    refreshFilterOptions(true);
+  }, [refreshFilterOptions]);
 
-        setFilters({ ...fetchedFilters, kelas: fetchedKelas });
-        
-        const initialTahunAjaran = fetchedFilters.tahun_ajaran[0] || "";
-        const initialSemester = fetchedFilters.semester[0] || "";
-        const initialKelas = fetchedKelas[0] || "";
-
-        const initialSelected = { tahun_ajaran: initialTahunAjaran, semester: initialSemester, kelas: initialKelas };
-        setSelectedFilters(initialSelected);
-        setActiveFilters(initialSelected);
-
-      } catch (error: any) {
-        setError(error.message || "Gagal memuat opsi filter");
-      }
-    };
-    fetchFilterOptions();
-  }, []);
+  const handleOpenReportModal = async () => {
+    await refreshFilterOptions(false);
+    setIsReportModalOpen(true);
+  };
 
 
   // Fungsi: jalankan proses clustering baru
@@ -244,7 +263,7 @@ export default function ClusteringPage() {
       setError("")
       await apiService.runClustering({  // mengatur jumlah cluster
         ...selectedFilters,
-        algoritma: "k-means", // Hardcoded as requested
+        algoritma: "kmeans",
       })
       
       setActiveFilters(selectedFilters); setClusterFilter(""); setRunCounter(c => c + 1);
@@ -272,24 +291,6 @@ export default function ClusteringPage() {
       }
     }
   };
-
-  // Fungsi: export hasil clustering ke file CSV
-  const handleExport = () => {
-    const csvContent =
-      "data:text/csv;charset=utf-8," +
-      "NIS,Nama,Kelas,Cluster,Keterangan,Jarak Centroid,Algoritma,Jumlah Cluster,Nilai Rata-rata\n" +
-      results.map((r: any) => 
-        `${r.nis || ""},${r.nama || ""},${r.kelas || ""},${r.cluster},${r.keterangan},${r.jarak_centroid},${r.algoritma},${r.jumlah_cluster},${r.nilai_rata_rata}`
-      ).join("\n")
-
-    const encodedUri = encodeURI(csvContent)
-    const link = document.createElement("a")
-    link.setAttribute("href", encodedUri)
-    link.setAttribute("download", "hasil_clustering.csv")
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-  }
 
   // Fungsi: mapping warna badge dengan className custom
   const getBadgeClass = (label: string): string => {
@@ -399,8 +400,7 @@ export default function ClusteringPage() {
         <div className="flex space-x-2">
           {results.length > 0 && (
             <>
-              <Button variant="outline" onClick={() => setIsReportModalOpen(true)}><Download className="mr-2 h-4 w-4" />Laporan PDF</Button>
-              <Button variant="outline" onClick={handleExport}><Download className="mr-2 h-4 w-4" />Export</Button>
+              <Button variant="outline" onClick={handleOpenReportModal}><Download className="mr-2 h-4 w-4" />Laporan PDF</Button>
               <Button variant="destructive" onClick={handleClearResults}><Trash2 className="mr-2 h-4 w-4" />Hapus Hasil</Button>
             </>
           )}
@@ -452,6 +452,7 @@ export default function ClusteringPage() {
               <Select
                 value={selectedFilters.kelas}
                 onValueChange={(value) => setSelectedFilters({ ...selectedFilters, kelas: value })}
+                onOpenChange={(open) => { if (open) void refreshFilterOptions(false) }}
               >
                 <SelectTrigger><SelectValue placeholder="Pilih kelas" /></SelectTrigger>
                 <SelectContent>

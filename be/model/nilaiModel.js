@@ -37,6 +37,10 @@ const Nilai = db.define(
       type: DataTypes.STRING(20),
       allowNull: false,
     },
+    kelas_snapshot: {
+      type: DataTypes.STRING(20),
+      allowNull: true,
+    },
     nilai: {
       type: DataTypes.DECIMAL(5, 2),
       allowNull: false,

@@ -18,21 +18,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Check, ChevronsUpDown } from "lucide-react";
-import { cn } from "@/lib/utils";
-import {
-    Command,
-    CommandEmpty,
-    CommandGroup,
-    CommandInput,
-    CommandItem,
-    CommandList,
-  } from "@/components/ui/command"
-  import {
-    Popover,
-    PopoverContent,
-    PopoverTrigger,
-  } from "@/components/ui/popover"
 
 // Interface for available filter options
 interface FilterOptions {
@@ -61,21 +46,20 @@ export function DownloadReportModal({
 }: DownloadReportModalProps) {
   const [selectedTahunAjaran, setSelectedTahunAjaran] = useState<string>("");
   const [selectedSemester, setSelectedSemester] = useState<string>("");
-  const [selectedKelas, setSelectedKelas] = useState<string[]>([]);
+  const [selectedKelas, setSelectedKelas] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [popoverOpen, setPopoverOpen] = useState(false)
 
   // Pre-fill with the first available option when modal opens
   useEffect(() => {
     if (isOpen) {
       setSelectedTahunAjaran(filters.tahun_ajaran[0] || "");
       setSelectedSemester(filters.semester[0] || "");
-      setSelectedKelas([]); // Reset kelas selection
+      setSelectedKelas(filters.kelas[0] || "");
     }
   }, [isOpen, filters]);
 
   const handleSubmit = async () => {
-    if (!selectedTahunAjaran || !selectedSemester || selectedKelas.length === 0) {
+    if (!selectedTahunAjaran || !selectedSemester || !selectedKelas) {
       alert("Harap lengkapi semua filter: Tahun Ajaran, Semester, dan Kelas.");
       return;
     }
@@ -83,7 +67,7 @@ export function DownloadReportModal({
     await onSubmit({
       tahun_ajaran: selectedTahunAjaran,
       semester: selectedSemester,
-      kelas: selectedKelas,
+      kelas: [selectedKelas],
     });
     setIsSubmitting(false);
     onClose();
@@ -143,54 +127,18 @@ export function DownloadReportModal({
              <Label htmlFor="kelas-modal" className="text-right">
                 Kelas
              </Label>
-             <div className="col-span-3">
-                <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
-                    <PopoverTrigger asChild>
-                        <Button
-                        variant="outline"
-                        role="combobox"
-                        aria-expanded={popoverOpen}
-                        className="w-full justify-between"
-                        >
-                        {selectedKelas.length > 0 ? `${selectedKelas.length} kelas dipilih` : "Pilih kelas..."}
-                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                        </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-[300px] p-0">
-                        <Command>
-                            <CommandInput placeholder="Cari kelas..." />
-                            <CommandList>
-                            <CommandEmpty>Kelas tidak ditemukan.</CommandEmpty>
-                            <CommandGroup>
-                                {filters.kelas.map((kelas) => (
-                                <CommandItem
-                                    key={kelas}
-                                    value={kelas}
-                                    onSelect={() => {
-                                        setSelectedKelas(prev => 
-                                            prev.includes(kelas) 
-                                            ? prev.filter(item => item !== kelas)
-                                            : [...prev, kelas]
-                                        )
-                                        // Keep the popover open for multi-selection
-                                        // setPopoverOpen(false) 
-                                    }}
-                                >
-                                    <Check
-                                    className={cn(
-                                        "mr-2 h-4 w-4",
-                                        selectedKelas.includes(kelas) ? "opacity-100" : "opacity-0"
-                                    )}
-                                    />
-                                    {kelas}
-                                </CommandItem>
-                                ))}
-                            </CommandGroup>
-                            </CommandList>
-                        </Command>
-                    </PopoverContent>
-                </Popover>
-             </div>
+             <Select value={selectedKelas} onValueChange={setSelectedKelas}>
+              <SelectTrigger className="col-span-3">
+                <SelectValue placeholder="Pilih kelas" />
+              </SelectTrigger>
+              <SelectContent>
+                {filters.kelas.map((k) => (
+                  <SelectItem key={k} value={k}>
+                    {k}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+             </Select>
           </div>
         </div>
         <DialogFooter>

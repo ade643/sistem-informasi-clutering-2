@@ -45,7 +45,7 @@ export const createMapel = async (req, res) => {
 
 export const getAllNilai = async (req, res) => {
   try {
-    const { page = 1, limit = 10, search = '', semester = '', tahun_ajaran = '', all = 'false' } = req.query;
+    const { page = 1, limit = 10, search = '', semester = '', tahun_ajaran = '', kelas = '', all = 'false' } = req.query;
     const offset = (parseInt(page) - 1) * parseInt(limit);
 
     // 1. Build a subquery to find distinct grade reports (siswa_id, semester, tahun_ajaran)
@@ -53,6 +53,7 @@ export const getAllNilai = async (req, res) => {
     let whereClause = {};
     if (semester) whereClause.semester = semester;
     if (tahun_ajaran) whereClause.tahun_ajaran = tahun_ajaran;
+    if (kelas) whereClause.kelas_snapshot = kelas;
 
     let siswaWhereClause = {};
     if (search) {
@@ -66,6 +67,7 @@ export const getAllNilai = async (req, res) => {
         'siswa_id',
         'semester',
         'tahun_ajaran',
+        'kelas_snapshot',
         [db.fn('MAX', db.col('nilai.created_at')), 'latest_created_at']
       ],
       include: [{
@@ -74,7 +76,7 @@ export const getAllNilai = async (req, res) => {
         where: siswaWhereClause,
         attributes: []
       }],
-      group: ['siswa_id', 'semester', 'tahun_ajaran'],
+      group: ['siswa_id', 'semester', 'tahun_ajaran', 'kelas_snapshot'],
       order: [[db.fn('MAX', db.col('nilai.created_at')), 'DESC']],
       raw: true
     });
@@ -104,7 +106,12 @@ export const getAllNilai = async (req, res) => {
     const groupedBySiswa = reportsToProcess.map(report => {
       const siswaData = nilaiData.find(n => n.siswa_id === report.siswa_id)?.siswa;
       const nilaiForSiswa = nilaiData
-        .filter(n => n.siswa_id === report.siswa_id && n.semester === report.semester && n.tahun_ajaran === report.tahun_ajaran)
+        .filter(n =>
+          n.siswa_id === report.siswa_id &&
+          n.semester === report.semester &&
+          n.tahun_ajaran === report.tahun_ajaran &&
+          n.kelas_snapshot === report.kelas_snapshot
+        )
         .map(n => ({
           mapel_id: n.mapel_id,
           nama_mapel: n.mata_pelajaran.nama_mapel,
@@ -115,7 +122,7 @@ export const getAllNilai = async (req, res) => {
         siswa_id: report.siswa_id,
         nis: siswaData?.nis,
         nama: siswaData?.nama,
-        kelas: siswaData?.kelas,
+        kelas: report.kelas_snapshot || siswaData?.kelas,
         semester: report.semester,
         tahun_ajaran: report.tahun_ajaran,
         nilai: nilaiForSiswa
@@ -145,12 +152,19 @@ export const createOrUpdateNilai = async (req, res) => {
       siswa_id,
       semester,
       tahun_ajaran,
+      kelas,
       nilai // expected to be an array of { mapel_id: x, nilai: y }
     } = req.body;
 
     if (!siswa_id || !semester || !tahun_ajaran || !Array.isArray(nilai)) {
       return res.status(400).json({ message: 'Input tidak valid. Pastikan semua field terisi.' });
     }
+
+    const siswa = await Siswa.findByPk(siswa_id, { transaction: t });
+    if (!siswa) {
+      return res.status(404).json({ message: 'Data siswa tidak ditemukan.' });
+    }
+    const kelasSnapshot = kelas || siswa.kelas;
 
     // Delete existing nilai for this student and semester/tahun_ajaran
     await Nilai.destroy({
@@ -167,6 +181,7 @@ export const createOrUpdateNilai = async (req, res) => {
         siswa_id,
         semester,
         tahun_ajaran,
+        kelas_snapshot: kelasSnapshot,
         mapel_id: n.mapel_id,
         nilai: parseFloat(n.nilai)
       };
@@ -291,6 +306,7 @@ export const uploadNilaiFromExcel = async (req, res) => {
               mapel_id: mapelId,
               semester,
               tahun_ajaran,
+              kelas_snapshot: kelas,
               nilai,
             });
           } else if (row[colName] !== null && row[colName] !== '') {

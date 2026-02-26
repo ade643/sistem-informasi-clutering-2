@@ -35,6 +35,10 @@ const hasil_cluster = db.define(
       type: DataTypes.STRING(20),
       allowNull: true,
     },
+    kelas_snapshot: {
+      type: DataTypes.STRING(20),
+      allowNull: true,
+    },
     jarak_centroid: {
       type: DataTypes.DECIMAL(10, 6),
       allowNull: false,
