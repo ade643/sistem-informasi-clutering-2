@@ -31,6 +31,7 @@ export default function LoginPage() {
         localStorage.setItem("token", response.data.token)
         localStorage.setItem("user", JSON.stringify(response.data.user))
         localStorage.setItem("isLoggedIn", "true")
+
         router.push("/")
       } else {
         setError("Login gagal, data tidak valid dari server")

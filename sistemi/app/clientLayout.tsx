@@ -12,6 +12,20 @@ import { ErrorBoundary } from "@/components/error-boundary"
 
 const inter = Inter({ subsets: ["latin"] })
 
+const allowedRoutesByRole: Record<string, string[]> = {
+  admin: ["/", "/users", "/students", "/grades", "/clustering"],
+  teacher: ["/", "/students", "/grades", "/clustering"],
+}
+
+const getDefaultRouteByRole = (role: string) => {
+  return role === "teacher" ? "/" : "/"
+}
+
+const isPathAllowedForRole = (pathname: string, role: string) => {
+  const allowedRoutes = allowedRoutesByRole[role] || allowedRoutesByRole.teacher
+  return allowedRoutes.some((route) => pathname === route || pathname.startsWith(`${route}/`))
+}
+
 export default function ClientLayout({
   children,
 }: {
@@ -26,23 +40,34 @@ export default function ClientLayout({
     const checkAuth = () => {
       const token = localStorage.getItem("token")
       const loggedIn = localStorage.getItem("isLoggedIn") === "true"
+      const userString = localStorage.getItem("user")
       let valid = loggedIn
+      let userRole = "teacher"
+
+      if (userString) {
+        try {
+          const user = JSON.parse(userString)
+          userRole = user?.role || "teacher"
+        } catch {
+          userRole = "teacher"
+        }
+      }
 
       // Cek token format JWT (ada 3 bagian dipisah titik)
-      if (!token || token.split('.').length !== 3) {
+      if (!token || token.split(".").length !== 3) {
         valid = false
       } else {
         try {
           // Decode JWT payload
-          const base64Url = token.split('.')[1]
-          const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/')
+          const base64Url = token.split(".")[1]
+          const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/")
           const jsonPayload = decodeURIComponent(
             atob(base64)
-              .split('')
+              .split("")
               .map(function (c) {
-                return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)
+                return "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2)
               })
-              .join('')
+              .join("")
           )
           const payload = JSON.parse(jsonPayload)
 
@@ -51,7 +76,7 @@ export default function ClientLayout({
           if (payload.exp && payload.exp < currentTime) {
             valid = false
           }
-        } catch (error) {
+        } catch {
           valid = false
         }
       }
@@ -64,6 +89,11 @@ export default function ClientLayout({
         localStorage.removeItem("user")
         localStorage.removeItem("isLoggedIn")
         router.push("/login")
+        return
+      }
+
+      if (valid && pathname !== "/login" && !isPathAllowedForRole(pathname, userRole)) {
+        router.push(getDefaultRouteByRole(userRole))
       }
     }
 
@@ -76,7 +106,7 @@ export default function ClientLayout({
         <body className={inter.className}>
           <div className="flex h-screen items-center justify-center">
             <div className="text-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto" />
               <p className="mt-2 text-sm text-gray-600">Memuat...</p>
             </div>
           </div>

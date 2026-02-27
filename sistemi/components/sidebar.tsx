@@ -8,9 +8,9 @@ import { Button } from "@/components/ui/button"
 import { LayoutDashboard, Users, GraduationCap, FileText, BarChart3, LogOut, TrendingUp } from "lucide-react"
 
 const allNavigation = [
-  { name: "Dashboard", href: "/", icon: LayoutDashboard, roles: ["admin"] },
+  { name: "Dashboard", href: "/", icon: LayoutDashboard, roles: ["admin", "teacher"] },
   { name: "Data Pengguna", href: "/users", icon: Users, roles: ["admin"] },
-  { name: "Data Siswa", href: "/students", icon: GraduationCap, roles: ["admin"] },
+  { name: "Data Siswa", href: "/students", icon: GraduationCap, roles: ["admin", "teacher"] },
   { name: "Data Nilai", href: "/grades", icon: FileText, roles: ["admin", "teacher"] },
   { name: "Clustering", href: "/clustering", icon: BarChart3, roles: ["admin", "teacher"] },
 ]
@@ -24,17 +24,15 @@ export function Sidebar() {
     if (userString) {
       try {
         const user = JSON.parse(userString)
-        const userRole = user?.role || "teacher" 
+        const userRole = user?.role || "teacher"
         const filteredNav = allNavigation.filter((item) => item.roles.includes(userRole))
         setVisibleNavigation(filteredNav)
       } catch (error) {
         console.error("Failed to parse user data from localStorage", error)
-        // Fallback for safety, maybe show teacher nav or nothing
         setVisibleNavigation(allNavigation.filter((item) => item.roles.includes("teacher")))
       }
     } else {
-      // Handle case where user is not in localStorage, redirect or show minimal nav
-       setVisibleNavigation(allNavigation.filter((item) => item.roles.includes("teacher")))
+      setVisibleNavigation(allNavigation.filter((item) => item.roles.includes("teacher")))
     }
   }, [])
 

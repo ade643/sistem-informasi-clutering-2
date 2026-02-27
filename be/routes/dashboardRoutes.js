@@ -1,16 +1,17 @@
 import express from 'express';
-import { 
-  getDashboardStats, 
-  getChartData, 
-  getQuickStats, 
+import {
+  getDashboardStats,
+  getChartData,
+  getQuickStats,
   getDashboardFilters
 } from '../controllers/dashboardController.js';
-import { verifyToken } from '../middleware/auth.js';
+import { verifyToken, verifyTeacher } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// All routes require authentication
+// All routes require authentication and teacher/admin role
 router.use(verifyToken);
+router.use(verifyTeacher);
 
 // Get dashboard statistics
 router.get('/stats', getDashboardStats);
@@ -24,4 +25,4 @@ router.get('/quick-stats', getQuickStats);
 // Get filters for dashboard
 router.get('/filters', getDashboardFilters);
 
-export default router; 
+export default router;
