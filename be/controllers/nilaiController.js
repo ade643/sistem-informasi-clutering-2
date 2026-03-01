@@ -10,7 +10,7 @@ import db from '../config/database.js';
 // Endpoint baru untuk mengambil semua mata pelajaran
 export const getAllMapel = async (req, res) => {
   try {
-    const mapel = await MataPelajaran.findAll({ order: [['nama_mapel', 'ASC']] });
+    const mapel = await MataPelajaran.findAll({ order: [['id', 'ASC']] });
     res.json({ success: true, data: mapel });
   } catch (error) {
     console.error('Get all mapel error:', error);

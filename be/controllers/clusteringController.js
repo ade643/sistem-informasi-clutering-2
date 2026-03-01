@@ -24,6 +24,16 @@ const getClusterColorHex = (label = '') => {
   return '#64748b';
 };
 
+const getClusterLabelRank = (label = '') => {
+  const lower = String(label).toLowerCase().trim();
+  if (lower === 'sangat tinggi') return 1;
+  if (lower === 'tinggi') return 2;
+  if (lower === 'sedang') return 3;
+  if (lower === 'rendah') return 4;
+  if (lower === 'sangat rendah') return 5;
+  return 99;
+};
+
 const drawClusterProfileChart = (doc, chartData, series, mapelLegend) => {
   doc.fontSize(12).font('Helvetica-Bold').fillColor('#000000').text('Grafik: Perbandingan Profil Kemampuan Siswa per Cluster', 40);
   doc.moveDown(0.3);
@@ -35,7 +45,7 @@ const drawClusterProfileChart = (doc, chartData, series, mapelLegend) => {
   doc.moveTo(chart.x, chart.y).lineTo(chart.x, chart.y + chart.height).stroke();
   doc.moveTo(chart.x, chart.y + chart.height).lineTo(chart.x + chart.width, chart.y + chart.height).stroke();
 
-  for (let tick = 0; tick <= 100; tick += 20) {
+  for (let tick = 0; tick <= 100; tick += 10) {
     const y = chart.y + chart.height - (tick / 100) * chart.height;
     doc.strokeColor('#d1d5db').lineWidth(0.5);
     doc.moveTo(chart.x, y).lineTo(chart.x + chart.width, y).stroke();
@@ -621,7 +631,14 @@ export const downloadClusteringReport = async (req, res) => {
       clusterAgg[result.cluster].count += 1;
     });
 
-    const sortedClusterIds = Array.from(clusterMeta.keys()).sort((a, b) => a - b);
+    const sortedClusterIds = Array.from(clusterMeta.keys()).sort((a, b) => {
+      const labelA = clusterMeta.get(a) || '';
+      const labelB = clusterMeta.get(b) || '';
+      const rankA = getClusterLabelRank(labelA);
+      const rankB = getClusterLabelRank(labelB);
+      if (rankA !== rankB) return rankA - rankB;
+      return a - b;
+    });
     const chartSeries = sortedClusterIds.map((clusterId) => ({
       key: `cluster_${clusterId}`,
       label: clusterMeta.get(clusterId) || `Cluster ${clusterId + 1}`,
@@ -724,8 +741,7 @@ export const downloadClusteringReport = async (req, res) => {
             persentase: ((count / totalSiswa) * 100).toFixed(1) + '%'
         }))
         .sort((a, b) => {
-             const rank = { 'Sangat Tinggi': 1, 'Tinggi': 2, 'Sedang': 3, 'Rendah': 4, 'Sangat Rendah': 5 };
-             return (rank[a.nama_cluster] || 99) - (rank[b.nama_cluster] || 99);
+             return getClusterLabelRank(a.nama_cluster) - getClusterLabelRank(b.nama_cluster);
         });
 
     doc.fontSize(12).font('Helvetica-Bold').text('Tabel 1: Ringkasan Hasil per Cluster');
@@ -774,10 +790,9 @@ export const downloadClusteringReport = async (req, res) => {
         return acc;
     }, {});
     
-    const sortedClusters = Object.keys(groupedByCluster).sort((a, b) => {
-         const rank = { 'Sangat Tinggi': 1, 'Tinggi': 2, 'Sedang': 3, 'Rendah': 4, 'Sangat Rendah': 5 };
-         return (rank[a] || 99) - (rank[b] || 99);
-    });
+    const sortedClusters = Object.keys(groupedByCluster).sort(
+      (a, b) => getClusterLabelRank(a) - getClusterLabelRank(b)
+    );
 
     for (const clusterName of sortedClusters) {
         doc.fontSize(12).font('Helvetica-Bold').text(`Tabel 3: Detail Cluster - ${clusterName}`, 40);

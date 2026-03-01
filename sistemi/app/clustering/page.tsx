@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { BarChart3, Play, Trash2, Download, Filter } from "lucide-react"
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import apiService from "@/lib/api"
 import { StudentGradeDetailModal } from '@/components/student-grade-detail-modal'
 import { DownloadReportModal } from "@/components/download-report-modal";
@@ -313,6 +313,18 @@ export default function ClusteringPage() {
     return "#64748b"
   }
 
+  const getLabelSortRank = useCallback((label: string): number => {
+    const normalized = String(label || "").toLowerCase().trim()
+    const rank: { [key: string]: number } = {
+      'sangat tinggi': 1,
+      'tinggi': 2,
+      'sedang': 3,
+      'rendah': 4,
+      'sangat rendah': 5,
+    }
+    return rank[normalized] || 99
+  }, [])
+
   const clusterProfile = useMemo(() => {
     if (!results.length || !nilaiBySiswa.length) {
       return {
@@ -354,7 +366,15 @@ export default function ClusteringPage() {
       }
     }
 
-    const sortedClusters = Array.from(clusterLabels.keys()).sort((a, b) => a - b)
+    const sortedClusters = Array.from(clusterLabels.keys()).sort((a, b) => {
+      const labelA = String(clusterLabels.get(a) || "").toLowerCase().trim()
+      const labelB = String(clusterLabels.get(b) || "").toLowerCase().trim()
+      const rankA = getLabelSortRank(labelA)
+      const rankB = getLabelSortRank(labelB)
+      if (rankA !== rankB) return rankA - rankB
+
+      return a - b
+    })
     const series = sortedClusters.map((clusterId) => ({
       key: `cluster_${clusterId}`,
       label: clusterLabels.get(clusterId) || `Cluster ${clusterId + 1}`,
@@ -381,7 +401,84 @@ export default function ClusteringPage() {
     })
 
     return { chartData, series, mapelLegend }
-  }, [results, nilaiBySiswa])
+  }, [results, nilaiBySiswa, getLabelSortRank])
+
+  const distributionEntries = useMemo(() => {
+    const rawEntries = (stats?.cluster_distribution && Array.isArray(stats.cluster_distribution)
+      ? stats.cluster_distribution
+      : Object.entries(stats?.cluster_distribution || {}).map(([label, data]) => ({
+          cluster_id: (data as any).cluster_id,
+          label,
+          count: (data as any).count,
+          percentage: (data as any).percentage,
+        }))
+    ) as Array<{
+      cluster_id: number
+      label: string
+      count: number | string
+      percentage: number | string
+    }>
+
+    return rawEntries.sort((a, b) => {
+      const rankA = getLabelSortRank(String(a.label))
+      const rankB = getLabelSortRank(String(b.label))
+      return rankA - rankB
+    })
+  }, [stats, getLabelSortRank])
+
+  const formatDistributionLabel = (label: string) => {
+    const normalized = String(label || "").trim().toLowerCase()
+    if (!normalized) return "-"
+    return `Prestasi ${normalized
+      .split(" ")
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(" ")}`
+  }
+
+  const formatPercentage = (value: string | number) => {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return `${parsed.toFixed(1)}%`
+    const cleaned = String(value || "").trim()
+    if (!cleaned) return "0.0%"
+    return cleaned.endsWith("%") ? cleaned : `${cleaned}%`
+  }
+
+  const renderClusterTooltip = useCallback((props: any) => {
+    const { active, payload, label } = props
+    if (!active || !payload || !payload.length) return null
+
+    const orderMap = new Map(clusterProfile.series.map((item, index) => [item.key, index]))
+    const seriesMeta = new Map(clusterProfile.series.map((item) => [item.key, { label: item.label }]))
+
+    const sortedPayload = [...payload].sort((a, b) => {
+      const idxA = orderMap.get(String(a.dataKey)) ?? Number.MAX_SAFE_INTEGER
+      const idxB = orderMap.get(String(b.dataKey)) ?? Number.MAX_SAFE_INTEGER
+      return idxA - idxB
+    })
+
+    const fullName = payload?.[0]?.payload?.mapelFull
+    const title = fullName ? `${label} - ${fullName}` : String(label)
+
+    return (
+      <div className="rounded-md border border-slate-700 bg-slate-800 p-3 text-sm text-slate-100 shadow-md">
+        <p className="mb-2 font-semibold">{title}</p>
+        <div className="space-y-1">
+          {sortedPayload.map((item: any) => {
+            const key = String(item.dataKey)
+            const meta = seriesMeta.get(key)
+            const value = Number(item.value)
+            const color = String(item.color || "#f8fafc")
+            return (
+              <div key={key} className="flex items-center gap-2" style={{ color }}>
+                <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: color }} />
+                <span>{meta?.label || item.name || key}: {Number.isFinite(value) ? value.toFixed(2) : String(item.value)}</span>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }, [clusterProfile.series])
 
   // Tampilan loading awal
   if (loading && !results.length && !error) {
@@ -506,7 +603,10 @@ export default function ClusteringPage() {
               <CardContent>
                 <div className="grid grid-cols-1 gap-6">
                   {/* Bar Chart */}
-                  <div className="w-full space-y-3">
+                  <div className="w-full space-y-3 rounded-md border p-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-semibold">Grafik Profil per Cluster</h3>
+                    </div>
                     <div className="h-[300px] w-full">
                     {clusterProfile.chartData.length > 0 ? (
                       <ResponsiveContainer width="100%" height="100%">
@@ -516,17 +616,15 @@ export default function ClusteringPage() {
                         >
                           <CartesianGrid strokeDasharray="3 3" />
                           <XAxis dataKey="mapelCode" />
-                          <YAxis />
-                          <Tooltip
-                            contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '0.5rem' }}
-                            labelStyle={{ color: '#f9fafb' }}
-                            labelFormatter={(label, payload) => {
-                              const fullName = payload?.[0]?.payload?.mapelFull
-                              return fullName ? `${label} - ${fullName}` : String(label)
-                            }}
-                            formatter={(value) => [`${Number(value).toFixed(2)}`, 'Nilai Rata-rata']}
+                          <YAxis
+                            domain={[0, 100]}
+                            ticks={[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]}
+                            interval={0}
+                            allowDecimals={false}
                           />
-                          <Legend />
+                          <Tooltip
+                            content={renderClusterTooltip}
+                          />
                           {clusterProfile.series.map((entry) => (
                             <Bar
                               key={entry.key}
@@ -543,6 +641,19 @@ export default function ClusteringPage() {
                       </div>
                     )}
                     </div>
+                    {clusterProfile.series.length > 0 && (
+                      <div className="flex flex-wrap items-center justify-center gap-3 text-sm">
+                        {clusterProfile.series.map((entry) => (
+                          <div key={`legend-${entry.key}`} className="flex items-center gap-1.5">
+                            <span
+                              className="inline-block h-3 w-3"
+                              style={{ backgroundColor: getClusterColor(entry.clusterLabel) }}
+                            />
+                            <span>{entry.label}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     {clusterProfile.mapelLegend.length > 0 && (
                       <div className="rounded-md border p-3">
                         <p className="mb-2 text-sm font-medium">Keterangan Kode Mapel</p>
@@ -556,46 +667,39 @@ export default function ClusteringPage() {
                   </div>
 
                   {/* Table Distribution */}
-                  <div className="w-full overflow-x-auto">
+                  <div className="w-full rounded-md border p-4">
+                    <div className="mb-3 flex items-center justify-between">
+                      <h3 className="text-sm font-semibold">Distribusi Prestasi Siswa</h3>
+                    </div>
+                    <p className="mb-3 text-xs text-muted-foreground">Berdasarkan periode aktif yang dipilih.</p>
+                    <div className="w-full overflow-x-auto">
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Cluster</TableHead>
-                          <TableHead >Jumlah Siswa</TableHead>
-                          <TableHead>%</TableHead>
+                          <TableHead>Kategori Prestasi</TableHead>
+                          <TableHead className="text-right">Jumlah Siswa</TableHead>
+                          <TableHead className="text-right">Persentase</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {(stats?.cluster_distribution && Array.isArray(stats.cluster_distribution)
-                          ? stats.cluster_distribution
-                          : Object.entries(stats?.cluster_distribution || {}).map(([label, data]) => ({
-                              cluster_id: (data as any).cluster_id,
-                              label,
-                              count: (data as any).count,
-                              percentage: (data as any).percentage,
-                            }))
-                        )
-                          ?.sort((a, b) => {
-                            const rank: { [key: string]: number } = {
-                              'sangat tinggi': 1,
-                              'tinggi': 2,
-                              'sedang': 3,
-                              'rendah': 4,
-                              'sangat rendah': 5,
-                            };
-                            const rankA = rank[a.label.toLowerCase()] || 99;
-                            const rankB = rank[b.label.toLowerCase()] || 99;
-                            return rankA - rankB;
-                          })
-                          .map((entry) => (
+                        {distributionEntries.map((entry) => (
                             <TableRow key={`${entry.cluster_id}-${entry.label}`}>                          
-                              <TableCell>{entry.label}</TableCell>
-                              <TableCell>{entry.count}</TableCell>
-                              <TableCell>{entry.percentage}</TableCell>
+                              <TableCell>{formatDistributionLabel(entry.label)}</TableCell>
+                              <TableCell className="text-right">{entry.count}</TableCell>
+                              <TableCell className="text-right">{formatPercentage(entry.percentage)}</TableCell>
                             </TableRow>
                         ))}
+                        {!!distributionEntries.length && (
+                          <TableRow className="border-t font-semibold">
+                            <TableCell>Total</TableCell>
+                            <TableCell className="text-right">{stats?.total_results || 0}</TableCell>
+                            <TableCell className="text-right">100.0%</TableCell>
+                          </TableRow>
+                        )}
                       </TableBody>
                     </Table>
+                    </div>
+                    <p className="mt-3 text-xs text-muted-foreground">Persentase dihitung dari total siswa pada periode terpilih.</p>
                   </div>
                 </div>
               </CardContent>
@@ -629,17 +733,9 @@ export default function ClusteringPage() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="all">Semua Cluster ({stats?.total_results || 0} siswa)</SelectItem>
-                        {(stats?.cluster_distribution && Array.isArray(stats.cluster_distribution)
-                          ? stats.cluster_distribution
-                          : Object.entries(stats?.cluster_distribution || {}).map(([label, data]) => ({
-                              cluster_id: (data as any).cluster_id,
-                              label,
-                              count: (data as any).count,
-                              percentage: (data as any).percentage,
-                            }))
-                        ).map((entry) => (
+                        {distributionEntries.map((entry) => (
                           <SelectItem key={`${entry.cluster_id}-${entry.label}`} value={entry.label} className="capitalize">
-                            {entry.label} ({entry.count} siswa)
+                            {formatDistributionLabel(entry.label)} ({entry.count} siswa)
                           </SelectItem>
                         ))}
                       </SelectContent>
