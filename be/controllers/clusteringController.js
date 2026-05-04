@@ -179,7 +179,14 @@ export const runClustering = async (req, res) => {
     };
 
     const flaskResponse = await axios.post('http://localhost:5001/clustering', flaskRequestData);
-    const { results: flaskResults, centroids: flaskCentroids } = flaskResponse.data;
+    const {
+      results: flaskResults,
+      centroids: flaskCentroids,
+      process: flaskProcess = null,
+      min_val: minVal = [],
+      max_val: maxVal = [],
+      wcss = 0,
+    } = flaskResponse.data;
 
     // Buat Map untuk mencari hasil cluster & jarak per siswa dengan cepat.
     const flaskResultMap = new Map(flaskResults.map(item => [item.id, { cluster: item.cluster, distance: item.distance }]));
@@ -252,7 +259,14 @@ export const runClustering = async (req, res) => {
 
     await hasil_cluster.bulkCreate(clusteringResultsToSave);
 
-    res.json({ success: true, message: 'Clustering berhasil dijalankan' });
+    res.json({
+      success: true,
+      message: 'Clustering berhasil dijalankan',
+      process: flaskProcess,
+      min_val: minVal,
+      max_val: maxVal,
+      wcss,
+    });
 
   } catch (error) {
     console.error('Run clustering error:', error.message);
@@ -763,7 +777,7 @@ export const downloadClusteringReport = async (req, res) => {
         nis: item.siswa.nis,
         nama: item.siswa.nama,
         kelas: item.kelas_snapshot || item.siswa.kelas,
-        cluster: item.cluster,
+        cluster: item.cluster + 1,
         keterangan: item.keterangan,
         rata_rata: item.nilai_rata_rata,
         jarak: parseFloat(item.jarak_centroid).toFixed(4),
@@ -803,7 +817,7 @@ export const downloadClusteringReport = async (req, res) => {
             nis: item.siswa.nis,
             nama: item.siswa.nama,
             kelas: item.kelas_snapshot || item.siswa.kelas,
-            cluster: item.cluster,
+            cluster: item.cluster + 1,
             keterangan: item.keterangan,
             rata_rata: item.nilai_rata_rata,
             jarak: parseFloat(item.jarak_centroid).toFixed(4),

@@ -760,7 +760,7 @@ export default function ClusteringPage() {
                           <TableCell>{result.nis || "-"}</TableCell>
                           <TableCell>{result.nama || "-"}</TableCell>
                           <TableCell>{result.kelas || "-"}</TableCell>
-                          <TableCell>{`C${result.cluster}`}</TableCell>
+                          <TableCell>{`C${result.cluster + 1}`}</TableCell>
                           <TableCell>
                             <Badge className={getBadgeClass(result.keterangan)}>{result.keterangan}</Badge>
                           </TableCell>

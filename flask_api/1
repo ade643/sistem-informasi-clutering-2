@@ -55,6 +55,42 @@ def format_distance_list(values, decimals=4):
 def euclidean(p1, p2):
     return np.sqrt(np.sum((np.array(p1) - np.array(p2)) ** 2))
 
+def calinski_harabasz_score_manual(data_scaled, clusters, centroids):
+    data_np = np.array(data_scaled, dtype=float)
+    clusters_np = np.array(clusters, dtype=int)
+    centroids_np = np.array(centroids, dtype=float)
+
+    n_samples = data_np.shape[0]
+    n_clusters = centroids_np.shape[0]
+
+    if n_clusters <= 1 or n_samples <= n_clusters:
+        return 0.0, 0.0, 0.0
+
+    global_centroid = np.mean(data_np, axis=0)
+
+    # SSW (Within-Cluster Sum of Squares)
+    ssw = 0.0
+    for i in range(n_samples):
+        c_idx = clusters_np[i]
+        ssw += float(np.sum((data_np[i] - centroids_np[c_idx]) ** 2))
+
+    # SSB (Between-Cluster Sum of Squares)
+    ssb = 0.0
+    for c_idx in range(n_clusters):
+        members = data_np[clusters_np == c_idx]
+        n_k = members.shape[0]
+        if n_k == 0:
+            continue
+        ssb += float(n_k * np.sum((centroids_np[c_idx] - global_centroid) ** 2))
+
+    if ssw == 0:
+        ch = 0.0
+    else:
+        ch = (ssb / (n_clusters - 1)) / (ssw / (n_samples - n_clusters))
+
+    return ssb, ssw, float(ch)
+
+
 # ===============================
 # K-MEANS MANUAL
 # ===============================
@@ -82,6 +118,18 @@ def kmeans_manual(data_scaled, ids, k, max_iter=300, verbose=True, show_first_n_
         "converged_at_iteration": None,
         "total_iterations": 0
     }
+
+    if verbose:
+        print(f"\n--- Memulai Proses K-Means (K={k}) ---")
+        print(f"Jumlah Cluster (K): {k}")
+        print(f"Jumlah Data: {n_samples}")
+        print(f"Jumlah Fitur: {data_scaled.shape[1]} Mata Pelajaran")
+
+        print("\n>>> INISIALISASI (Centroid Awal):")
+        print("Indeks data yang dipilih sebagai centroid awal:", idx.tolist())
+        for c_idx, c_val in enumerate(centroids):
+            potong = format_centroid_preview(c_val.tolist(), show_first_n_features, decimals=4)
+            print(f"  Centroid {c_idx + 1}: {potong}...")
 
     for n_iter in range(max_iter):
         # Assign cluster
@@ -123,6 +171,16 @@ def kmeans_manual(data_scaled, ids, k, max_iter=300, verbose=True, show_first_n_
             ]
         })
 
+        if verbose:
+            print(f"\n>>> ITERASI KE-{n_iter+1}")
+            print(f"WCSS Iterasi: {wcss_iter:.6f}")
+            for c_idx in range(k):
+                n_member = int(np.sum(clusters == c_idx))
+                before = format_centroid_preview(centroids[c_idx].tolist(), show_first_n_features, decimals=4)
+                after = format_centroid_preview(new_centroids[c_idx].tolist(), show_first_n_features, decimals=4)
+                print(f"  Centroid {c_idx + 1} ({n_member} anggota)")
+                print(f"    sebelum: {before}...")
+                print(f"    sesudah: {after}...")
 
         # Cek konvergensi
         if np.allclose(centroids, new_centroids, atol=1e-8):
@@ -139,14 +197,51 @@ def kmeans_manual(data_scaled, ids, k, max_iter=300, verbose=True, show_first_n_
 
         centroids = new_centroids
 
+    # Kalau tidak konvergen sampai max_iter, tetap tampilkan centroid final
+    else:
+        if verbose:
+            print(f"\nMencapai max_iter={max_iter} tanpa konvergensi.")
+            print("\n>>> CENTROID FINAL (HASIL AKHIR):")
+            for c_idx, c_val in enumerate(centroids):
+                potong = format_centroid_preview(c_val.tolist(), show_first_n_features, decimals=4)
+                print(f"  Centroid {c_idx + 1}: {potong}...")
+            print()
+
     process_log["final_centroids"] = centroids.tolist()
     process_log["total_iterations"] = len(process_log["iterations"])
 
     # Hitung WCSS final dan jarak individual
     final_dists = np.linalg.norm(data_scaled - centroids[clusters], axis=1)
     wcss = float(np.sum(final_dists ** 2))
-   
-    return clusters.tolist(), centroids.tolist(), wcss, final_dists.tolist(), process_log
+
+    # Jarak final setiap data ke semua centroid (untuk logging terminal)
+    final_distances_matrix = []
+    for point in data_scaled:
+        dists = [euclidean(point, centroid) for centroid in centroids]
+        final_distances_matrix.append(dists)
+
+    ssb, ssw, ch_index = calinski_harabasz_score_manual(data_scaled, clusters, centroids)
+
+    if verbose:
+        print(">>> JARAK EUCLIDEAN FINAL KE TIAP CENTROID")
+        for i in range(n_samples):
+            dists_str = format_distance_list(final_distances_matrix[i], decimals=4)
+            assigned_cluster = int(clusters[i])
+            assigned_cluster_display = assigned_cluster + 1
+            assigned_dist = float(final_distances_matrix[i][assigned_cluster])
+            print(
+                f"- ID {ids[i]} | centroid={assigned_cluster_display} | "
+                f"jarak_terpilih={assigned_dist:.4f} | semua_jarak={dists_str}"
+            )
+
+        print("\n>>> EVALUASI KUALITAS CLUSTERING (CALINSKI-HARABASZ)")
+        print(f"SSB (Between-Cluster Sum of Squares): {ssb:.6f}")
+        print(f"SSW (Within-Cluster Sum of Squares):  {ssw:.6f}")
+        print(f"Calinski-Harabasz Index (CH):         {ch_index:.6f}\n")
+
+    return clusters.tolist(), centroids.tolist(), wcss, final_dists.tolist(), process_log, ssb, ssw, ch_index
+
+
 
 # ===============================
 # ENDPOINT: CLUSTERING (SEBELUMNYA /kmeans)
@@ -170,11 +265,12 @@ def process_clustering():
         # Normalisasi
         data_scaled, min_val, max_val = minmax_scale(vectors)
 
-
+        # TAMPILKAN HASIL NORMALISASI DI TERMINAL
+        print_normalization(ids, vectors, data_scaled, min_val, max_val, limit=None)
 
         # Proses k-means manual
-        labels, centroids, wcss, distances, process_log = kmeans_manual(
-            data_scaled, ids, k
+        labels, centroids, wcss, distances, process_log, ssb, ssw, ch_index = kmeans_manual(
+            data_scaled, ids, k, verbose=True, show_first_n_features=data_scaled.shape[1]
         )
 
         # Format hasil sesuai yang diharapkan Node.js
@@ -190,6 +286,9 @@ def process_clustering():
             "results": results,
             "centroids": centroids,
             "wcss": wcss,
+            "ssb": ssb,
+            "ssw": ssw,
+            "calinski_harabasz": ch_index,
             "min_val": min_val,
             "max_val": max_val,
             "process": {
